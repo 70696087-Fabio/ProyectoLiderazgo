@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="EcoRuta: sigue el recorrido del camión de basura y recibe avisos antes de que pase por tu casa.">
+  <title>EcoRuta | Sigue al camión de la basura</title>
+
+  <!-- Favicon SVG (embebido) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='32' fill='%23198754'/%3E%3Crect x='10' y='30' width='26' height='15' rx='2.5' fill='white'/%3E%3Cpath d='M36 34h10l6 7v4H36z' fill='white'/%3E%3Ccircle cx='20' cy='46' r='4.6' fill='%23198754' stroke='white' stroke-width='2.5'/%3E%3Ccircle cx='44' cy='46' r='4.6' fill='%23198754' stroke='white' stroke-width='2.5'/%3E%3C/svg%3E">
+
+  <!-- Bootstrap 5 y Leaflet (CDN) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <style>
+    :root {
+      --eco-green: #198754;
+      --eco-dark: #0f5132;
+      --eco-light: #e9f7ef;
+    }
+
+    html { scroll-behavior: smooth; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    section[id], header[id] { scroll-margin-top: 70px; }
+
+    /* ---------- Iconos SVG ---------- */
+    .icon { width: 1em; height: 1em; vertical-align: -.125em; flex-shrink: 0; }
+    .logo { width: 38px; height: 38px; flex-shrink: 0; }
+
+    /* ---------- Navbar ---------- */
+    .navbar { background-color: var(--eco-dark); }
+    .navbar .navbar-toggler { border-color: rgba(255,255,255,.4); color: #fff; }
+    .navbar .navbar-toggler .icon { width: 1.6rem; height: 1.6rem; vertical-align: middle; }
+
+    /* ---------- Hero ---------- */
+    .hero {
+      background: linear-gradient(135deg, var(--eco-dark) 0%, var(--eco-green) 100%);
+      color: #fff;
+      padding: 5rem 0;
+    }
+    .hero h1 { font-weight: 800; line-height: 1.15; }
+    .hero-logo {
+      width: clamp(9rem, 28vw, 15rem);
+      height: clamp(9rem, 28vw, 15rem);
+      filter: drop-shadow(0 14px 28px rgba(0,0,0,.3));
+      animation: flotar 4s ease-in-out infinite;
+    }
+    @keyframes flotar { 50% { transform: translateY(-10px); } }
+    .hero-badge { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3); }
+
+    /* ---------- Secciones ---------- */
+    .section-title { font-weight: 700; color: var(--eco-dark); }
+    .section-subtitle { max-width: 640px; margin-inline: auto; }
+    .bg-eco-light { background-color: var(--eco-light); }
+
+    /* ---------- Tarjetas ---------- */
+    .eco-card { border: 0; border-radius: 1rem; transition: transform .2s ease, box-shadow .2s ease; }
+    .eco-card:hover { transform: translateY(-6px); box-shadow: 0 .75rem 1.5rem rgba(0,0,0,.12) !important; }
+    .icon-circle {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: var(--eco-light); color: var(--eco-green);
+      display: inline-flex; align-items: center; justify-content: center; font-size: 1.8rem;
+    }
+    .step-number {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--eco-green); color: #fff; font-weight: 700;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+
+    /* ---------- Panel / mapa ---------- */
+    #map { height: 380px; width: 100%; background: #dfeee5; }
+    @media (min-width: 992px) { #map { height: 600px; } }
+    .nav-pills { --bs-nav-pills-link-active-bg: var(--eco-green); }
+    .stat { background: var(--eco-light); border-radius: .75rem; padding: .75rem .5rem; }
+    .stat-label { font-size: .75rem; color: #6c757d; }
+    .stat-value { font-size: 1.4rem; font-weight: 700; color: var(--eco-dark); }
+    .map-pin {
+      width: 40px; height: 40px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 20px; border: 3px solid #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    }
+    .map-pin.truck { background: var(--eco-green); animation: pulso 2s infinite; }
+    .map-pin.home { background: #0d6efd; }
+    @keyframes pulso {
+      0%   { box-shadow: 0 0 0 0 rgba(25,135,84,.6), 0 2px 8px rgba(0,0,0,.35); }
+      70%  { box-shadow: 0 0 0 16px rgba(25,135,84,0), 0 2px 8px rgba(0,0,0,.35); }
+      100% { box-shadow: 0 0 0 0 rgba(25,135,84,0), 0 2px 8px rgba(0,0,0,.35); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .hero-logo, .map-pin.truck { animation: none; }
+      html { scroll-behavior: auto; }
+    }
+
+    /* ---------- Footer ---------- */
+    footer { background-color: #0b3d27; color: #d1e7dd; }
+    footer a { color: #d1e7dd; text-decoration: none; }
+    footer a:hover { color: #fff; text-decoration: underline; }
+
+    @media (max-width: 575.98px) { .hero { padding: 3.5rem 0; } }
+  </style>
+</head>
+<body>
+
+  <!-- =====================================================================
+       SPRITE DE ICONOS SVG (logo + iconos). Uso:
+       <svg class="icon"><use href="#i-truck"/></svg>
+       ===================================================================== -->
+  <svg id="sprite" xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <!-- LOGO EcoRuta: camión recolector emitiendo señal de aviso -->
+    <symbol id="logo" viewBox="0 0 64 64">
+      <defs>
+        <linearGradient id="g-eco" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#22b573"/>
+          <stop offset="1" stop-color="#0f5132"/>
+        </linearGradient>
+      </defs>
+      <circle cx="32" cy="32" r="30" fill="url(#g-eco)" stroke="#fff" stroke-width="3"/>
+      <path d="M39 20a9 9 0 0 1 12 0M35 14.5a15 15 0 0 1 20 0" fill="none" stroke="#a8f0c8" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="45" cy="26" r="2.4" fill="#a8f0c8"/>
+      <rect x="10" y="30" width="26" height="15" rx="2.5" fill="#fff"/>
+      <path d="M16 34v7M22 34v7M28 34v7" stroke="#22b573" stroke-width="2" stroke-linecap="round"/>
+      <path d="M36 34h10l6 7v4H36z" fill="#fff"/>
+      <path d="M40 37h5l3 3.5H40z" fill="#22b573"/>
+      <circle cx="20" cy="46" r="4.6" fill="#0f5132" stroke="#fff" stroke-width="2.5"/>
+      <circle cx="44" cy="46" r="4.6" fill="#0f5132" stroke="#fff" stroke-width="2.5"/>
+    </symbol>
+
+    <!-- ICONOS (rejilla 24x24, trazo) -->
+    <symbol id="i-truck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5h12v10H2z"/><path d="M14 10h4.2l3.3 3.6v2.9H14z"/><circle cx="6.5" cy="18.5" r="2"/><circle cx="17.5" cy="18.5" r="2"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 17v-6a6 6 0 0 1 12 0v6l2 2H4z"/><path d="M10 21.5a2 2 0 0 0 4 0"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></symbol>
+    <symbol id="i-leaf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19C5 10 10 5 20 5c0 10-5 15-14 15"/><path d="M5 19c3.5-5 6.5-8 10-10"/></symbol>
+    <symbol id="i-route" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h7a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h7"/></symbol>
+    <symbol id="i-badge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="2.5"/><path d="M7.5 17a4.5 4 0 0 1 9 0"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14a5 5 0 0 1 4.5 5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5l12 7.5-12 7.5z"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+    <symbol id="i-locate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.8"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="i-facebook" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h-2.5A3.5 3.5 0 0 0 9 7.5V10H6.5v3.5H9V21h3.5v-7.5h2.7l.8-3.5h-3.5V7.8c0-.5.4-.8.8-.8H15z"/></symbol>
+    <symbol id="i-instagram" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r=".6"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8l-5 4 5 4M16 8l5 4-5 4M14 5l-4 14"/></symbol>
+  </svg>
+
+  <!-- ===================== NAVBAR ===================== -->
+  <nav class="navbar navbar-expand-lg navbar-dark sticky-top shadow-sm">
+    <div class="container">
+      <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="#inicio">
+        <svg class="logo" role="img" aria-label="Logo de EcoRuta"><use href="#logo"/></svg>
+        EcoRuta
+      </a>
+
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+              data-bs-target="#menuPrincipal" aria-controls="menuPrincipal"
+              aria-expanded="false" aria-label="Abrir menú de navegación">
+        <svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg>
+      </button>
+
+      <div class="collapse navbar-collapse" id="menuPrincipal">
+        <ul class="navbar-nav ms-auto mb-2 mb-lg-0 align-items-lg-center">
+          <li class="nav-item"><a class="nav-link active" href="#inicio">Inicio</a></li>
+          <li class="nav-item"><a class="nav-link" href="#como-funciona">Cómo funciona</a></li>
+          <li class="nav-item"><a class="nav-link" href="#beneficios">Beneficios</a></li>
+          <li class="nav-item"><a class="nav-link" href="#roles">Usuarios</a></li>
+          <li class="nav-item"><a class="nav-link" href="#app">Panel</a></li>
+          <li class="nav-item"><a class="nav-link" href="#contacto">Contacto</a></li>
+
+          <!-- Visible sin sesión -->
+          <li id="authButtons" class="nav-item">
+            <div class="d-flex gap-2 mt-2 mt-lg-0 ms-lg-3">
+              <button type="button" class="btn btn-outline-light btn-sm flex-fill" data-auth="login">Iniciar sesión</button>
+              <button type="button" class="btn btn-success btn-sm flex-fill" data-auth="register">Registrarse</button>
+            </div>
+          </li>
+
+          <!-- Visible con sesión -->
+          <li id="userMenu" class="nav-item d-none">
+            <div class="d-flex align-items-center gap-2 mt-2 mt-lg-0 ms-lg-3 text-white">
+              <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>
+              <span id="userName" class="small"></span>
+              <button type="button" id="btnLogout" class="btn btn-outline-light btn-sm">Salir</button>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+
+    <!-- ===================== HERO ===================== -->
+    <header id="inicio" class="hero">
+      <div class="container">
+        <div class="row align-items-center g-4 g-lg-5">
+          <div class="col-lg-7 text-center text-lg-start">
+            <span class="badge hero-badge rounded-pill px-3 py-2 mb-3">
+              <svg class="icon me-1" aria-hidden="true"><use href="#i-bell"/></svg> Alertas con minutos de antelación
+            </span>
+            <h1 class="display-5 mb-3">Sabe cuándo pasa el camión y mantén tu calle limpia</h1>
+            <p class="lead mb-4">
+              Sigue el recorrido del camión recolector en tiempo real y recibe un aviso
+              antes de que llegue a tu casa. Saca tu basura a tiempo y evita que se
+              acumule en la vía pública.
+            </p>
+            <div class="d-grid gap-2 d-sm-flex justify-content-sm-center justify-content-lg-start">
+              <a href="#app" data-role="neighbor" class="btn btn-light btn-lg px-4 fw-semibold">
+                <svg class="icon me-1" aria-hidden="true"><use href="#i-home"/></svg> Soy vecino
+              </a>
+              <a href="#app" data-role="driver" class="btn btn-outline-light btn-lg px-4">
+                <svg class="icon me-1" aria-hidden="true"><use href="#i-badge"/></svg> Soy conductor
+              </a>
+            </div>
+          </div>
+          <div class="col-lg-5 text-center">
+            <svg class="hero-logo" aria-hidden="true"><use href="#logo"/></svg>
+            <p class="small opacity-75 mt-3 mb-0">La calle no es un basurero</p>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===================== CÓMO FUNCIONA ===================== -->
+    <section id="como-funciona" class="py-5">
+      <div class="container py-3">
+        <div class="text-center mb-5">
+          <h2 class="section-title">¿Cómo funciona?</h2>
+          <p class="text-muted section-subtitle">Tres pasos sencillos conectan al conductor con los vecinos.</p>
+        </div>
+
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+          <div class="col">
+            <article class="card eco-card h-100 shadow-sm text-center p-3">
+              <div class="card-body">
+                <div class="icon-circle mb-3"><svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg></div>
+                <div class="mb-2"><span class="step-number">1</span></div>
+                <h3 class="h5 card-title">El conductor inicia su ruta</h3>
+                <p class="card-text text-muted">Desde su panel activa el recorrido y comparte la ubicación del camión en tiempo real.</p>
+              </div>
+            </article>
+          </div>
+          <div class="col">
+            <article class="card eco-card h-100 shadow-sm text-center p-3">
+              <div class="card-body">
+                <div class="icon-circle mb-3"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg></div>
+                <div class="mb-2"><span class="step-number">2</span></div>
+                <h3 class="h5 card-title">El vecino registra su casa</h3>
+                <p class="card-text text-muted">Indica su dirección y elige con cuántos minutos de anticipación quiere recibir el aviso.</p>
+              </div>
+            </article>
+          </div>
+          <div class="col">
+            <article class="card eco-card h-100 shadow-sm text-center p-3">
+              <div class="card-body">
+                <div class="icon-circle mb-3"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg></div>
+                <div class="mb-2"><span class="step-number">3</span></div>
+                <h3 class="h5 card-title">Llega la alerta y se saca la basura</h3>
+                <p class="card-text text-muted">Cuando el camión está cerca, el sistema avisa y los residuos no quedan abandonados en la calle.</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== BENEFICIOS ===================== -->
+    <section id="beneficios" class="py-5 bg-eco-light">
+      <div class="container py-3">
+        <div class="text-center mb-5">
+          <h2 class="section-title">Beneficios</h2>
+          <p class="text-muted section-subtitle">Una herramienta pensada para la comunidad y para quienes recolectan los residuos.</p>
+        </div>
+
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-xl-4 g-4">
+          <div class="col">
+            <article class="card eco-card h-100 shadow-sm">
+              <div class="card-body text-center">
+                <div class="icon-circle mb-3"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg></div>
+                <h3 class="h5 card-title">Aviso anticipado</h3>
+                <p class="card-text text-muted">Recibe una notificación varios minutos antes de que el camión pase.</p>
+              </div>
+            </article>
+          </div>
+          <div class="col">
+            <article class="card eco-card h-100 shadow-sm">
+              <div class="card-body text-center">
+                <div class="icon-circle mb-3"><svg class="icon" aria-hidden="true"><use href="#i-map"/></svg></div>
+                <h3 class="h5 card-title">Seguimiento en mapa</h3>
+                <p class="card-text text-muted">Mira dónde está el camión y qué tan cerca se encuentra de tu casa.</p>
+              </div>
+            </article>
+          </div>
+          <div class="col">
+            <article class="card eco-card h-100 shadow-sm">
+              <div class="card-body text-center">
+                <div class="icon-circle mb-3"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg></div>
+                <h3 class="h5 card-title">Calles más limpias</h3>
+                <p class="card-text text-muted">Menos residuos abandonados en la vía pública y un entorno más saludable.</p>
+              </div>
+            </article>
+          </div>
+          <div class="col">
+            <article class="card eco-card h-100 shadow-sm">
+              <div class="card-body text-center">
+                <div class="icon-circle mb-3"><svg class="icon" aria-hidden="true"><use href="#i-route"/></svg></div>
+                <h3 class="h5 card-title">Rutas más eficientes</h3>
+                <p class="card-text text-muted">El conductor gestiona su recorrido y el servicio se vuelve más ordenado.</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== ROLES ===================== -->
+    <section id="roles" class="py-5">
+      <div class="container py-3">
+        <div class="text-center mb-5">
+          <h2 class="section-title">Dos tipos de usuario</h2>
+          <p class="text-muted section-subtitle">Cada perfil tiene su propio panel con las herramientas que necesita.</p>
+        </div>
+
+        <div class="row g-4 justify-content-center">
+          <div class="col-12 col-md-6 col-xl-5">
+            <article class="card eco-card h-100 shadow border-top border-4 border-success">
+              <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                  <div class="icon-circle"><svg class="icon" aria-hidden="true"><use href="#i-badge"/></svg></div>
+                  <h3 class="h4 mb-0">Conductor</h3>
+                </div>
+                <ul class="list-unstyled text-muted mb-4">
+                  <li class="mb-2"><svg class="icon text-success me-2" aria-hidden="true"><use href="#i-check"/></svg>Iniciar y finalizar la ruta</li>
+                  <li class="mb-2"><svg class="icon text-success me-2" aria-hidden="true"><use href="#i-check"/></svg>Compartir ubicación en tiempo real</li>
+                  <li class="mb-2"><svg class="icon text-success me-2" aria-hidden="true"><use href="#i-check"/></svg>Simular un recorrido para demostraciones</li>
+                </ul>
+                <div class="d-grid gap-2">
+                  <a href="#app" data-role="driver" class="btn btn-success">Abrir panel de conductor</a>
+                  <button type="button" data-auth="register" class="btn btn-link btn-sm">Crear cuenta de conductor</button>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="col-12 col-md-6 col-xl-5">
+            <article class="card eco-card h-100 shadow border-top border-4 border-success">
+              <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                  <div class="icon-circle"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg></div>
+                  <h3 class="h4 mb-0">Vecino</h3>
+                </div>
+                <ul class="list-unstyled text-muted mb-4">
+                  <li class="mb-2"><svg class="icon text-success me-2" aria-hidden="true"><use href="#i-check"/></svg>Ver el camión en el mapa</li>
+                  <li class="mb-2"><svg class="icon text-success me-2" aria-hidden="true"><use href="#i-check"/></svg>Configurar minutos de anticipación</li>
+                  <li class="mb-2"><svg class="icon text-success me-2" aria-hidden="true"><use href="#i-check"/></svg>Recibir alertas de llegada</li>
+                </ul>
+                <div class="d-grid gap-2">
+                  <a href="#app" data-role="neighbor" class="btn btn-outline-success">Abrir panel de vecino</a>
+                  <button type="button" data-auth="register" class="btn btn-link btn-sm">Crear cuenta de vecino</button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== PANEL DE SEGUIMIENTO (APP) ===================== -->
+    <section id="app" class="py-5 bg-eco-light">
+      <div class="container py-3">
+        <div class="text-center mb-4">
+          <h2 class="section-title">Panel de seguimiento</h2>
+          <p class="text-muted section-subtitle">
+            Elige tu rol. Para probarlo, abre la página en dos pestañas: en una inicia la ruta como conductor
+            y en la otra mira cómo llegan los avisos como vecino.
+          </p>
+        </div>
+
+        <div class="row g-4">
+          <!-- MAPA -->
+          <div class="col-lg-7 order-1 order-lg-2">
+            <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+              <div id="map" role="application" aria-label="Mapa con la ubicación del camión y de tu casa"></div>
+              <div class="card-footer bg-white small text-muted d-flex flex-wrap gap-3">
+                <span><svg class="icon text-success" aria-hidden="true"><use href="#i-truck"/></svg> Camión</span>
+                <span><svg class="icon text-primary" aria-hidden="true"><use href="#i-home"/></svg> Tu casa (arrastra el marcador para ajustarla)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CONTROLES -->
+          <div class="col-lg-5 order-2 order-lg-1">
+            <div class="card border-0 shadow-sm rounded-4">
+              <div class="card-header bg-white border-0 pt-3">
+                <ul class="nav nav-pills nav-fill" id="roleTabs" role="tablist">
+                  <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-neighbor" data-bs-toggle="pill" data-bs-target="#pane-neighbor"
+                            type="button" role="tab" aria-controls="pane-neighbor" aria-selected="true">
+                      <svg class="icon me-1" aria-hidden="true"><use href="#i-users"/></svg>Vecino
+                    </button>
+                  </li>
+                  <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-driver" data-bs-toggle="pill" data-bs-target="#pane-driver"
+                            type="button" role="tab" aria-controls="pane-driver" aria-selected="false">
+                      <svg class="icon me-1" aria-hidden="true"><use href="#i-badge"/></svg>Conductor
+                    </button>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="card-body">
+                <div class="tab-content">
+
+                  <!-- Panel del vecino -->
+                  <div class="tab-pane fade show active" id="pane-neighbor" role="tabpanel" aria-labelledby="tab-neighbor" tabindex="0">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                      <span class="fw-semibold">Estado del camión</span>
+                      <span id="truckBadge" class="badge text-bg-secondary" aria-live="polite">Fuera de servicio</span>
+                    </div>
+
+                    <div class="row g-2 text-center mb-3">
+                      <div class="col-6"><div class="stat"><div class="stat-label">Distancia a tu casa</div><div class="stat-value" id="statDist">—</div></div></div>
+                      <div class="col-6"><div class="stat"><div class="stat-label">Llegada estimada</div><div class="stat-value" id="statEta">—</div></div></div>
+                    </div>
+
+                    <label for="minutes" class="form-label fw-semibold">Avisarme con anticipación de</label>
+                    <select id="minutes" class="form-select mb-3">
+                      <option value="1">1 minuto</option>
+                      <option value="2">2 minutos</option>
+                      <option value="3">3 minutos</option>
+                      <option value="5">5 minutos</option>
+                      <option value="10">10 minutos</option>
+                      <option value="15">15 minutos</option>
+                    </select>
+
+                    <div class="d-grid gap-2 mb-3">
+                      <button id="btnNotif" type="button" class="btn btn-success">
+                        <svg class="icon me-1" aria-hidden="true"><use href="#i-bell"/></svg><span id="btnNotifLabel">Activar notificaciones</span>
+                      </button>
+                      <button id="btnTest" type="button" class="btn btn-outline-secondary btn-sm">Probar aviso (sonido y vibración)</button>
+                    </div>
+
+                    <p class="fw-semibold mb-1">Mi casa</p>
+                    <p id="homeLabel" class="small text-muted mb-2">Aún no marcaste tu casa. Toca el mapa, usa tu ubicación o busca tu dirección.</p>
+                    <div class="d-grid mb-2">
+                      <button id="btnLocate" type="button" class="btn btn-outline-success">
+                        <svg class="icon me-1" aria-hidden="true"><use href="#i-locate"/></svg>Usar mi ubicación
+                      </button>
+                    </div>
+                    <form id="geoForm" class="input-group mb-2" role="search">
+                      <input id="geoQuery" type="search" class="form-control" placeholder="Buscar mi dirección…" aria-label="Buscar mi dirección" minlength="3" required>
+                      <button class="btn btn-outline-success" type="submit">Buscar</button>
+                    </form>
+                    <div id="geoResults" class="list-group mb-2"></div>
+                    <button id="btnDemoHome" type="button" class="btn btn-link btn-sm p-0 mb-3">Usar domicilio de demostración</button>
+
+                    <hr>
+                    <p class="fw-semibold mb-2">Últimos avisos</p>
+                    <ul id="alertLog" class="list-unstyled small mb-0"><li class="text-muted">Sin avisos todavía.</li></ul>
+                  </div>
+
+                  <!-- Panel del conductor -->
+                  <div class="tab-pane fade" id="pane-driver" role="tabpanel" aria-labelledby="tab-driver" tabindex="0">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                      <span class="fw-semibold">Estado de la ruta</span>
+                      <span id="drvBadge" class="badge text-bg-secondary" aria-live="polite">Detenida</span>
+                    </div>
+
+                    <div class="d-grid gap-2 mb-3">
+                      <button id="btnGPS" type="button" class="btn btn-success">
+                        <svg class="icon me-1" aria-hidden="true"><use href="#i-play"/></svg>Iniciar ruta con GPS
+                      </button>
+                      <button id="btnSim" type="button" class="btn btn-outline-success">
+                        <svg class="icon me-1" aria-hidden="true"><use href="#i-route"/></svg>Simular recorrido (demo)
+                      </button>
+                      <button id="btnStop" type="button" class="btn btn-outline-danger" disabled>
+                        <svg class="icon me-1" aria-hidden="true"><use href="#i-stop"/></svg>Finalizar ruta
+                      </button>
+                    </div>
+
+                    <dl class="row small mb-3">
+                      <dt class="col-5">Posición</dt><dd class="col-7" id="drvCoords">—</dd>
+                      <dt class="col-5">Velocidad</dt><dd class="col-7" id="drvSpeed">—</dd>
+                      <dt class="col-5">Precisión GPS</dt><dd class="col-7" id="drvAcc">—</dd>
+                    </dl>
+
+                    <div class="alert alert-light border small mb-0">
+                      <strong>GPS:</strong> usa la ubicación real del dispositivo (requiere permiso y HTTPS o localhost).
+                      <br><strong>Demo:</strong> recorre una ruta por calles con el tiempo acelerado, ideal para presentar el proyecto sin un camión real.
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer id="contacto" class="pt-5 pb-3">
+    <div class="container">
+      <div class="row g-4">
+        <div class="col-12 col-md-6 col-lg-4">
+          <h5 class="text-white d-flex align-items-center gap-2">
+            <svg class="logo" aria-hidden="true"><use href="#logo"/></svg> EcoRuta
+          </h5>
+          <p class="small">Aplicación web para seguir el recorrido del camión de basura y recibir avisos antes de que pase por tu casa.</p>
+        </div>
+
+        <div class="col-6 col-md-3 col-lg-2">
+          <h6 class="text-white">Enlaces</h6>
+          <ul class="list-unstyled small">
+            <li class="mb-1"><a href="#inicio">Inicio</a></li>
+            <li class="mb-1"><a href="#como-funciona">Cómo funciona</a></li>
+            <li class="mb-1"><a href="#beneficios">Beneficios</a></li>
+            <li class="mb-1"><a href="#app">Panel</a></li>
+          </ul>
+        </div>
+
+        <div class="col-6 col-md-3 col-lg-3">
+          <h6 class="text-white">Contacto</h6>
+          <ul class="list-unstyled small">
+            <li class="mb-1"><svg class="icon me-2" aria-hidden="true"><use href="#i-mail"/></svg>contacto@ecoruta.pe</li>
+            <li class="mb-1"><svg class="icon me-2" aria-hidden="true"><use href="#i-pin"/></svg>Lima, Perú</li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-white">Proyecto académico</h6>
+          <p class="small mb-2">Curso: Diseño Web<br>Universidad: Universidad Continental</p>
+          <div class="d-flex gap-3 fs-5">
+            <a href="#" aria-label="Facebook"><svg class="icon"><use href="#i-facebook"/></svg></a>
+            <a href="#" aria-label="Instagram"><svg class="icon"><use href="#i-instagram"/></svg></a>
+            <a href="#" aria-label="Repositorio de código"><svg class="icon"><use href="#i-code"/></svg></a>
+          </div>
+        </div>
+      </div>
+
+      <hr class="border-secondary my-4">
+      <p class="text-center small mb-0">
+        &copy; <span id="anio"></span> EcoRuta · Proyecto grupal universitario · Todos los derechos reservados
+      </p>
+    </div>
+  </footer>
+
+  <!-- ===================== MODAL DE SESIÓN ===================== -->
+  <div class="modal fade" id="authModal" tabindex="-1" aria-labelledby="authTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content rounded-4">
+        <div class="modal-header border-0 pb-0">
+          <h2 class="modal-title h5 d-flex align-items-center gap-2" id="authTitle">
+            <svg class="logo" aria-hidden="true"><use href="#logo"/></svg> Accede a EcoRuta
+          </h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <ul class="nav nav-pills nav-fill mb-3" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="tab-login" data-bs-toggle="pill" data-bs-target="#pane-login" type="button" role="tab" aria-controls="pane-login" aria-selected="true">Iniciar sesión</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="tab-register" data-bs-toggle="pill" data-bs-target="#pane-register" type="button" role="tab" aria-controls="pane-register" aria-selected="false">Crear cuenta</button>
+            </li>
+          </ul>
+
+          <div id="authError" class="alert alert-danger d-none" role="alert"></div>
+
+          <div class="tab-content">
+            <div class="tab-pane fade show active" id="pane-login" role="tabpanel" aria-labelledby="tab-login">
+              <form id="loginForm" novalidate>
+                <div class="form-floating mb-3">
+                  <input type="email" class="form-control" id="logEmail" placeholder="correo@ejemplo.com" required autocomplete="email">
+                  <label for="logEmail">Correo electrónico</label>
+                  <div class="invalid-feedback">Ingresa un correo válido.</div>
+                </div>
+                <div class="form-floating mb-3">
+                  <input type="password" class="form-control" id="logPass" placeholder="Contraseña" required autocomplete="current-password">
+                  <label for="logPass">Contraseña</label>
+                  <div class="invalid-feedback">Ingresa tu contraseña.</div>
+                </div>
+                <button class="btn btn-success w-100 py-2" type="submit">Entrar</button>
+              </form>
+            </div>
+
+            <div class="tab-pane fade" id="pane-register" role="tabpanel" aria-labelledby="tab-register">
+              <form id="registerForm" novalidate>
+                <div class="form-floating mb-3">
+                  <input type="text" class="form-control" id="regName" placeholder="Nombre" required minlength="2" autocomplete="name">
+                  <label for="regName">Nombre completo</label>
+                  <div class="invalid-feedback">Ingresa tu nombre.</div>
+                </div>
+                <div class="form-floating mb-3">
+                  <input type="email" class="form-control" id="regEmail" placeholder="correo@ejemplo.com" required autocomplete="email">
+                  <label for="regEmail">Correo electrónico</label>
+                  <div class="invalid-feedback">Ingresa un correo válido.</div>
+                </div>
+                <div class="form-floating mb-3">
+                  <input type="password" class="form-control" id="regPass" placeholder="Contraseña" required minlength="6" autocomplete="new-password">
+                  <label for="regPass">Contraseña (mínimo 6 caracteres)</label>
+                  <div class="invalid-feedback">Usa al menos 6 caracteres.</div>
+                </div>
+                <div class="form-floating mb-3">
+                  <select class="form-select" id="regRole" required>
+                    <option value="vecino" selected>Vecino</option>
+                    <option value="conductor">Conductor</option>
+                  </select>
+                  <label for="regRole">Tipo de usuario</label>
+                </div>
+                <button class="btn btn-success w-100 py-2" type="submit">Crear cuenta</button>
+              </form>
+            </div>
+          </div>
+
+          <p class="small text-muted mt-3 mb-0">
+            Demostración: las cuentas se guardan solo en este navegador (la contraseña se almacena cifrada con PBKDF2).
+            En producción se necesita un servidor con base de datos.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Avisos emergentes -->
+  <div id="toasts" class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:1100"></div>
+
+  <!-- Bootstrap JS (incluye Popper) y Leaflet -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Respaldo: si unpkg no carga Leaflet, se intenta con jsDelivr
+    if (typeof L === 'undefined') {
+      document.write('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">');
+      document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"><\/script>');
+    }
+  </script>
+
+  <script>
+  /* =========================================================================
+     EcoRuta — lógica de la aplicación
+
+     APIs utilizadas
+     ---------------
+     • Leaflet + OpenStreetMap ........ mapa y marcadores
+     • Geolocation API ................ GPS del conductor y ubicación del vecino
+     • Notifications API .............. aviso del sistema operativo
+     • Vibration API / Web Audio API .. aviso vibratorio y sonoro
+     • Screen Wake Lock API ........... mantiene la pantalla encendida al conductor
+     • BroadcastChannel + localStorage  comunicación en tiempo real entre pestañas
+     • Nominatim (OSM) ................ buscar direcciones (geocodificación)
+     • OSRM (demo pública) ............ ruta por calles para el modo demostración
+     • Web Crypto API (PBKDF2) ........ cifrado de contraseñas de las cuentas demo
+
+     IMPORTANTE: BroadcastChannel solo conecta pestañas del MISMO navegador.
+     Para conectar dispositivos distintos hay que reemplazar el objeto
+     `Transport` (más abajo) por un backend en tiempo real (WebSocket, Firebase,
+     Supabase, etc.). El resto del código no cambia.
+     ========================================================================= */
+  (() => {
+    'use strict';
+
+    /* ---------- Configuración ---------- */
+    const CFG = {
+      staleMs: 45000,                       // sin señal tras 45 s
+      sim: { apparent: 5, scale: 8, tickMs: 500 }, // 5 m/s "reales", tiempo x8
+      center: { lat: -12.1195, lng: -77.0292 },
+      waypoints: [                          // recorrido de demostración (circuito cerrado)
+        { lat: -12.1150, lng: -77.0340 },
+        { lat: -12.1150, lng: -77.0245 },
+        { lat: -12.1240, lng: -77.0245 },
+        { lat: -12.1240, lng: -77.0340 },
+        { lat: -12.1150, lng: -77.0340 }
+      ],
+      demoHome: { lat: -12.1195, lng: -77.0247, label: 'Domicilio de demostración' }
+    };
+
+    /* ---------- Utilidades ---------- */
+    const $ = (s, r = document) => r.querySelector(s);
+    const store = {
+      get(k, d = null) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+      set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* almacenamiento no disponible */ } },
+      del(k) { try { localStorage.removeItem(k); } catch { /* nada */ } }
+    };
+    const toRad = d => d * Math.PI / 180;
+    function haversine(a, b) {            // distancia en metros
+      const R = 6371000, dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
+      const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(x));
+    }
+    const fmtDist = m => (m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m) + ' m');
+    const fmtEta = s => { const m = Math.round(s / 60); return m < 1 ? '< 1 min' : m + ' min'; };
+    const hhmm = d => d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+
+    function toast(msg, type = 'success') {
+      const el = document.createElement('div');
+      el.className = `toast align-items-center text-bg-${type} border-0`;
+      el.setAttribute('role', 'alert');
+      el.innerHTML = '<div class="d-flex"><div class="toast-body"></div>' +
+        '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Cerrar"></button></div>';
+      el.querySelector('.toast-body').textContent = msg;
+      $('#toasts').appendChild(el);
+      el.addEventListener('hidden.bs.toast', () => el.remove());
+      new bootstrap.Toast(el, { delay: 7000 }).show();
+    }
+
+    function listMsg(box, text) {
+      box.textContent = '';
+      const d = document.createElement('div');
+      d.className = 'list-group-item small text-muted';
+      d.textContent = text;
+      box.appendChild(d);
+    }
+
+    /* ---------- Estado ---------- */
+    const state = {
+      home: store.get('ecoruta:home'),
+      minutes: Number(store.get('ecoruta:minutes', 3)) || 3,
+      truck: null,
+      alerted: { near: false, pass: false },
+      log: []
+    };
+    const driver = { mode: null, watchId: null, simTimer: null, wake: null };
+
+    /* =======================================================================
+       TRANSPORTE EN TIEMPO REAL (BroadcastChannel + localStorage)
+       ======================================================================= */
+    const Transport = (() => {
+      const KEY = 'ecoruta:truck';
+      const bc = 'BroadcastChannel' in window ? new BroadcastChannel('ecoruta') : null;
+      const listeners = new Set();
+      const emit = msg => listeners.forEach(fn => fn(msg));
+      if (bc) bc.onmessage = e => emit(e.data);
+      window.addEventListener('storage', e => {          // respaldo si no hay BroadcastChannel
+        if (!bc && e.key === KEY && e.newValue) { try { emit(JSON.parse(e.newValue)); } catch { /* ignorar */ } }
+      });
+      return {
+        send(msg) { store.set(KEY, msg); if (bc) bc.postMessage(msg); emit(msg); },
+        on(fn) { listeners.add(fn); },
+        last() { return store.get(KEY); }
+      };
+    })();
+
+    /* =======================================================================
+       MAPA (Leaflet + teselas con respaldo: Esri → CARTO → OSM)
+       ======================================================================= */
+    const hasMap = typeof L !== 'undefined';
+    let map, truckMarker, homeMarker, trail, routeLine, accCircle;
+    const pin = (cls, id) => L.divIcon({
+      className: '',
+      html: `<div class="map-pin ${cls}"><svg class="icon" aria-hidden="true"><use href="#${id}"/></svg></div>`,
+      iconSize: [40, 40], iconAnchor: [20, 20]
+    });
+
+    if (hasMap) {
+      map = L.map('map').setView([CFG.center.lat, CFG.center.lng], 14);
+
+      // Proveedores de teselas (sin API key). Si uno falla, se pasa al siguiente.
+      const PROVIDERS = [
+        { name: 'Esri',
+          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+          opts: { maxZoom: 19, attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, USGS, and the GIS User Community' } },
+        { name: 'CARTO',
+          url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+          opts: { maxZoom: 20, subdomains: 'abcd', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' } },
+        { name: 'OpenStreetMap',
+          url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          opts: { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' } }
+      ];
+      let provIdx = 0, tileLayer = null, tileErrors = 0, tileOk = 0;
+
+      function useProvider(i) {
+        if (tileLayer) map.removeLayer(tileLayer);
+        provIdx = i; tileErrors = 0; tileOk = 0;
+        const p = PROVIDERS[i];
+        tileLayer = L.tileLayer(p.url, p.opts).addTo(map);
+        tileLayer.on('tileload', () => { tileOk++; });
+        tileLayer.on('tileerror', () => {
+          tileErrors++;
+          // Si fallan varias teselas y ninguna cargó, cambiar de proveedor
+          if (tileErrors >= 4 && tileOk === 0) {
+            if (provIdx + 1 < PROVIDERS.length) {
+              console.warn('Teselas de ' + p.name + ' no disponibles; usando ' + PROVIDERS[provIdx + 1].name);
+              useProvider(provIdx + 1);
+            } else {
+              toast('No se pudieron cargar las teselas del mapa. Revisa tu conexión.', 'warning');
+            }
+          }
+        });
+      }
+      useProvider(0);
+
+      map.on('click', e => {
+        if ($('#pane-neighbor').classList.contains('active')) {
+          setHome({ lat: e.latlng.lat, lng: e.latlng.lng, label: 'Ubicación marcada en el mapa' }, { fly: false });
+        }
+      });
+
+      // Evita el mapa gris/cortado si el contenedor cambia de tamaño
+      const fixSize = () => map.invalidateSize();
+      window.addEventListener('load', () => setTimeout(fixSize, 300));
+      window.addEventListener('resize', fixSize);
+      if ('ResizeObserver' in window) new ResizeObserver(fixSize).observe($('#map'));
+    } else {
+      $('#map').innerHTML = '<div class="p-4 text-center text-muted">No se pudo cargar el mapa (Leaflet). Revisa tu conexión a internet.</div>';
+    }
+
+    function fitAll() {
+      if (!hasMap) return;
+      const pts = [];
+      if (truckMarker) pts.push(truckMarker.getLatLng());
+      if (homeMarker) pts.push(homeMarker.getLatLng());
+      if (pts.length > 1) map.fitBounds(L.latLngBounds(pts).pad(0.3));
+      else if (pts.length === 1) map.setView(pts[0], 16);
+    }
+
+    function showTruck(t) {
+      if (!hasMap) return;
+      const ll = [t.lat, t.lng];
+      if (!truckMarker) {
+        truckMarker = L.marker(ll, { icon: pin('truck', 'i-truck'), title: 'Camión recolector', zIndexOffset: 1000 }).addTo(map);
+        trail = L.polyline([], { color: '#198754', weight: 4, opacity: 0.6 }).addTo(map);
+        fitAll();
+      } else {
+        truckMarker.setLatLng(ll);
+      }
+      trail.addLatLng(ll);
+      const pts = trail.getLatLngs();
+      if (pts.length > 300) { pts.shift(); trail.setLatLngs(pts); }
+    }
+
+    function hideTruck() {
+      if (!hasMap) return;
+      if (truckMarker) { map.removeLayer(truckMarker); truckMarker = null; }
+      if (trail) { map.removeLayer(trail); trail = null; }
+    }
+
+    /* =======================================================================
+       AVISOS: Notifications + Vibration + Web Audio + Toast
+       ======================================================================= */
+    let audioCtx = null;
+    function initAudio() {
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+      } catch { /* sin audio */ }
+    }
+    document.addEventListener('click', initAudio, { once: true });
+
+    function beep() {
+      if (!audioCtx) return;
+      const t = audioCtx.currentTime;
+      [0, 0.28, 0.56].forEach(off => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'sine'; o.frequency.value = 880;
+        g.gain.setValueAtTime(0.0001, t + off);
+        g.gain.exponentialRampToValueAtTime(0.25, t + off + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + off + 0.2);
+        o.connect(g).connect(audioCtx.destination);
+        o.start(t + off); o.stop(t + off + 0.22);
+      });
+    }
+
+    function renderNotifBtn() {
+      const b = $('#btnNotif'), l = $('#btnNotifLabel');
+      if (!('Notification' in window)) { b.disabled = true; l.textContent = 'Notificaciones no disponibles'; return; }
+      if (Notification.permission === 'granted') { b.disabled = true; l.textContent = 'Notificaciones activadas'; }
+      else if (Notification.permission === 'denied') { b.disabled = true; l.textContent = 'Bloqueadas: actívalas en el navegador'; }
+      else { b.disabled = false; l.textContent = 'Activar notificaciones'; }
+    }
+
+    async function enableNotifications() {
+      initAudio();
+      if (!('Notification' in window)) { toast('Tu navegador no soporta notificaciones.', 'warning'); return; }
+      try { await Notification.requestPermission(); } catch { /* navegadores antiguos */ }
+      renderNotifBtn();
+      if (Notification.permission === 'granted') toast('Notificaciones activadas.');
+    }
+
+    function sysNotify(title, body) {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      try {
+        new Notification(title, { body, icon: $('link[rel="icon"]').href, tag: 'ecoruta', renotify: true });
+      } catch { /* en Android se requiere Service Worker */ }
+    }
+
+    function addLog(text) {
+      state.log.unshift({ t: new Date(), text });
+      state.log = state.log.slice(0, 5);
+      const ul = $('#alertLog');
+      ul.textContent = '';
+      state.log.forEach(it => {
+        const li = document.createElement('li');
+        li.className = 'mb-1';
+        li.textContent = `${hhmm(it.t)} · ${it.text}`;
+        ul.appendChild(li);
+      });
+    }
+
+    function fireAlert(title, body) {
+      toast(`${title} ${body}`, 'success');
+      addLog(`${title} ${body}`);
+      sysNotify(title, body);
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 300]);
+      beep();
+    }
+
+    /* =======================================================================
+       LÓGICA DEL VECINO: distancia, tiempo estimado y alertas
+       ======================================================================= */
+    function resetAlerts() { state.alerted.near = false; state.alerted.pass = false; }
+
+    function renderTruckBadge() {
+      const b = $('#truckBadge'), t = state.truck;
+      if (!t) { b.className = 'badge text-bg-secondary'; b.textContent = 'Fuera de servicio'; return; }
+      if (Date.now() - t.ts > CFG.staleMs) { b.className = 'badge text-bg-warning'; b.textContent = 'Sin señal'; return; }
+      b.className = 'badge text-bg-success';
+      b.textContent = t.mode === 'sim' ? 'En ruta (demo)' : 'En ruta';
+    }
+
+    function evaluate() {
+      const t = state.truck, h = state.home;
+      if (!t || !h) { $('#statDist').textContent = '—'; $('#statEta').textContent = '—'; return; }
+      const d = haversine(t, h);
+      const eta = d / Math.max(t.speed || 0, 3);       // segundos (velocidad mínima 3 m/s)
+      $('#statDist').textContent = fmtDist(d);
+      $('#statEta').textContent = fmtEta(eta);
+
+      const limit = state.minutes * 60;
+      if (d <= 100 && !state.alerted.pass) {
+        state.alerted.pass = true; state.alerted.near = true;
+        fireAlert('¡El camión está pasando por tu casa!', 'Saca tu basura ahora.');
+      } else if (eta <= limit && !state.alerted.near) {
+        state.alerted.near = true;
+        fireAlert('¡El camión de basura se acerca!', `Llegará en unos ${fmtEta(eta)} (${fmtDist(d)}). Saca tu basura.`);
+      }
+      if (eta > limit + 60) state.alerted.near = false;   // se alejó: rearmar aviso
+      if (d > 400) state.alerted.pass = false;
+    }
+
+    function onTruck(msg) {
+      if (msg.type === 'start') {
+        resetAlerts();
+        if (trail) trail.setLatLngs([]);
+        return;
+      }
+      if (msg.type === 'stop') {
+        state.truck = null; resetAlerts(); hideTruck(); renderTruckBadge(); evaluate();
+        return;
+      }
+      if (msg.type === 'pos') {
+        state.truck = msg;
+        showTruck(msg); renderTruckBadge(); evaluate();
+      }
+    }
+    Transport.on(onTruck);
+
+    function setHome(h, opts = {}) {
+      const fly = opts.fly !== false;
+      state.home = { lat: h.lat, lng: h.lng, label: h.label || 'Ubicación marcada' };
+      store.set('ecoruta:home', state.home);
+      resetAlerts();
+      if (hasMap) {
+        if (!homeMarker) {
+          homeMarker = L.marker([h.lat, h.lng], { icon: pin('home', 'i-home'), draggable: true, title: 'Mi casa' }).addTo(map);
+          homeMarker.on('dragend', () => {
+            const p = homeMarker.getLatLng();
+            setHome({ lat: p.lat, lng: p.lng, label: 'Ubicación ajustada en el mapa' }, { fly: false });
+          });
+        } else {
+          homeMarker.setLatLng([h.lat, h.lng]);
+        }
+        if (accCircle) { map.removeLayer(accCircle); accCircle = null; }
+        if (opts.accuracy) {
+          accCircle = L.circle([h.lat, h.lng], { radius: opts.accuracy, color: '#0d6efd', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(map);
+        }
+        if (fly) map.flyTo([h.lat, h.lng], opts.accuracy > 300 ? 14 : 16);
+      }
+      $('#homeLabel').textContent = `${state.home.label} (${h.lat.toFixed(5)}, ${h.lng.toFixed(5)})`;
+      evaluate();
+    }
+
+    function geoError(err) {
+      const m = {
+        1: 'Permiso de ubicación denegado. Actívalo en la configuración del navegador.',
+        2: 'No se pudo determinar la ubicación.',
+        3: 'Se agotó el tiempo para obtener la ubicación.'
+      };
+      toast(m[err.code] || 'Error de geolocalización.', 'danger');
+    }
+
+    $('#btnNotif').addEventListener('click', enableNotifications);
+    $('#btnTest').addEventListener('click', () => {
+      initAudio();
+      fireAlert('Aviso de prueba:', 'así te avisaremos cuando el camión esté cerca.');
+    });
+    $('#minutes').addEventListener('change', e => {
+      state.minutes = Number(e.target.value);
+      store.set('ecoruta:minutes', state.minutes);
+      resetAlerts(); evaluate();
+    });
+    $('#btnLocate').addEventListener('click', () => {
+      if (!('geolocation' in navigator)) { toast('Tu navegador no soporta geolocalización.', 'warning'); return; }
+      const btn = $('#btnLocate');
+      btn.disabled = true;
+      toast('Buscando tu ubicación…', 'secondary');
+      let best = null, watchId = null, timer = null;
+
+      const finish = () => {
+        clearTimeout(timer);
+        if (watchId != null) navigator.geolocation.clearWatch(watchId);
+        btn.disabled = false;
+        if (!best) return;
+        const acc = Math.round(best.accuracy);
+        setHome({ lat: best.lat, lng: best.lng, label: `Mi ubicación actual (± ${fmtDist(acc)})` }, { accuracy: acc });
+        if (acc > 500) {
+          toast(`Tu dispositivo dio una ubicación aproximada (± ${fmtDist(acc)}), típico en PC o sin GPS. ` +
+                'Arrastra el marcador azul o toca el mapa para ponerlo en tu casa.', 'warning');
+        }
+      };
+
+      // Se escuchan varias lecturas y se conserva la más precisa (máx. 12 s)
+      watchId = navigator.geolocation.watchPosition(
+        p => {
+          if (!best || p.coords.accuracy < best.accuracy) {
+            best = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy };
+          }
+          if (best.accuracy <= 50) finish();          // ya es suficientemente exacta
+        },
+        err => { if (best) finish(); else { clearTimeout(timer); navigator.geolocation.clearWatch(watchId); btn.disabled = false; geoError(err); } },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+      );
+      timer = setTimeout(() => { if (best) finish(); else { navigator.geolocation.clearWatch(watchId); btn.disabled = false; geoError({ code: 3 }); } }, 12000);
+    });
+    $('#btnDemoHome').addEventListener('click', () => setHome(CFG.demoHome));
+
+    // Búsqueda de direcciones con Nominatim (OpenStreetMap)
+    $('#geoForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const q = $('#geoQuery').value.trim();
+      const box = $('#geoResults');
+      if (q.length < 3) return;
+      listMsg(box, 'Buscando…');
+      try {
+        const r = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=4&accept-language=es&q=' + encodeURIComponent(q));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        if (!data.length) { listMsg(box, 'Sin resultados. Prueba con más detalles (calle, número, distrito).'); return; }
+        box.textContent = '';
+        data.forEach(it => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'list-group-item list-group-item-action small';
+          b.textContent = it.display_name;
+          b.addEventListener('click', () => {
+            setHome({ lat: parseFloat(it.lat), lng: parseFloat(it.lon), label: it.display_name });
+            box.textContent = '';
+          });
+          box.appendChild(b);
+        });
+      } catch {
+        listMsg(box, 'No se pudo consultar el servicio de direcciones. Marca tu casa tocando el mapa.');
+      }
+    });
+
+    /* =======================================================================
+       LÓGICA DEL CONDUCTOR: GPS real o recorrido simulado
+       ======================================================================= */
+    function driverUi(mode) {
+      const on = !!mode;
+      $('#btnGPS').disabled = on;
+      $('#btnSim').disabled = on;
+      $('#btnStop').disabled = !on;
+      const b = $('#drvBadge');
+      b.className = 'badge ' + (on ? 'text-bg-success' : 'text-bg-secondary');
+      b.textContent = mode === 'gps' ? 'En ruta (GPS)' : mode === 'sim' ? 'En ruta (demo)' : 'Detenida';
+      if (!on) ['#drvCoords', '#drvSpeed', '#drvAcc'].forEach(s => { $(s).textContent = '—'; });
+    }
+
+    function publishPos(p) {
+      Transport.send({
+        type: 'pos', lat: p.lat, lng: p.lng, speed: p.speed, accuracy: p.accuracy || null,
+        mode: p.mode, ts: Date.now()
+      });
+      $('#drvCoords').textContent = `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
+      $('#drvSpeed').textContent = p.mode === 'sim' ? `${Math.round(p.speed * 3.6)} km/h (simulada)` : `${Math.round(p.speed * 3.6)} km/h`;
+      $('#drvAcc').textContent = p.accuracy ? `± ${Math.round(p.accuracy)} m` : '—';
+    }
+
+    async function lockScreen() {
+      try { if ('wakeLock' in navigator) driver.wake = await navigator.wakeLock.request('screen'); } catch { /* sin permiso */ }
+    }
+    function unlockScreen() {
+      if (driver.wake) { driver.wake.release().catch(() => {}); driver.wake = null; }
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && driver.mode === 'gps') lockScreen();
+    });
+
+    function startGPS() {
+      if (!('geolocation' in navigator)) { toast('Tu navegador no soporta geolocalización.', 'warning'); return; }
+      driver.mode = 'gps'; driverUi('gps');
+      Transport.send({ type: 'start', ts: Date.now() });
+      lockScreen();
+      driver.watchId = navigator.geolocation.watchPosition(
+        pos => publishPos({
+          lat: pos.coords.latitude, lng: pos.coords.longitude,
+          speed: pos.coords.speed != null ? pos.coords.speed : 5,
+          accuracy: pos.coords.accuracy, mode: 'gps'
+        }),
+        err => { geoError(err); stopRoute(); },
+        { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 }
+      );
+    }
+
+    // --- Ruta de demostración (OSRM) ---
+    async function fetchRoute(points) {
+      const coords = points.map(p => `${p.lng},${p.lat}`).join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        const r = await fetch(url, { signal: ctrl.signal });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        if (j.code !== 'Ok') throw new Error(j.code);
+        return j.routes[0].geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
+      } finally { clearTimeout(timer); }
+    }
+    function densify(points, stepM) {              // respaldo: interpola líneas rectas
+      const out = [points[0]];
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1], b = points[i];
+        const n = Math.max(1, Math.round(haversine(a, b) / stepM));
+        for (let k = 1; k <= n; k++) out.push({ lat: a.lat + (b.lat - a.lat) * k / n, lng: a.lng + (b.lng - a.lng) * k / n });
+      }
+      return out;
+    }
+    function buildPath(pts) {
+      const cum = [0];
+      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + haversine(pts[i - 1], pts[i]));
+      return { pts, cum, total: cum[cum.length - 1] };
+    }
+    function pointAt(path, dist) {
+      const d = dist % path.total;
+      let i = 1;
+      while (i < path.cum.length - 1 && path.cum[i] < d) i++;
+      const seg = path.cum[i] - path.cum[i - 1] || 1;
+      const f = (d - path.cum[i - 1]) / seg;
+      const a = path.pts[i - 1], b = path.pts[i];
+      return { lat: a.lat + (b.lat - a.lat) * f, lng: a.lng + (b.lng - a.lng) * f };
+    }
+
+    async function startSim() {
+      driver.mode = 'sim'; driverUi('sim');
+      let pts;
+      try {
+        pts = await fetchRoute(CFG.waypoints);
+      } catch {
+        pts = densify(CFG.waypoints, 25);
+        toast('No se pudo obtener la ruta por calles (OSRM). Se usa un recorrido simple.', 'warning');
+      }
+      if (driver.mode !== 'sim') return;           // se canceló mientras cargaba
+      const path = buildPath(pts);
+      if (hasMap) {
+        routeLine = L.polyline(pts.map(p => [p.lat, p.lng]), { color: '#0d6efd', weight: 3, dashArray: '6 8', opacity: 0.7 }).addTo(map);
+      }
+      Transport.send({ type: 'start', ts: Date.now() });
+      let dist = 0;
+      driver.simTimer = setInterval(() => {
+        dist += CFG.sim.apparent * CFG.sim.scale * (CFG.sim.tickMs / 1000);
+        const p = pointAt(path, dist);
+        publishPos({ lat: p.lat, lng: p.lng, speed: CFG.sim.apparent, accuracy: null, mode: 'sim' });
+      }, CFG.sim.tickMs);
+    }
+
+    function stopRoute() {
+      if (driver.watchId != null) { navigator.geolocation.clearWatch(driver.watchId); driver.watchId = null; }
+      if (driver.simTimer) { clearInterval(driver.simTimer); driver.simTimer = null; }
+      if (routeLine && hasMap) { map.removeLayer(routeLine); routeLine = null; }
+      unlockScreen();
+      const was = driver.mode;
+      driver.mode = null; driverUi(null);
+      if (was) Transport.send({ type: 'stop', ts: Date.now() });
+    }
+
+    $('#btnGPS').addEventListener('click', startGPS);
+    $('#btnSim').addEventListener('click', startSim);
+    $('#btnStop').addEventListener('click', stopRoute);
+    window.addEventListener('beforeunload', () => { if (driver.mode) Transport.send({ type: 'stop', ts: Date.now() }); });
+
+    /* =======================================================================
+       CUENTAS (demo): Web Crypto + localStorage
+       ======================================================================= */
+    const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+    const newSalt = () => hex(crypto.getRandomValues(new Uint8Array(16)));
+    async function hashPass(pass, salt) {
+      const enc = new TextEncoder();
+      const key = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveBits']);
+      const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode(salt), iterations: 100000, hash: 'SHA-256' }, key, 256);
+      return hex(bits);
+    }
+
+    const users = () => store.get('ecoruta:users', []);
+    const showAuthError = msg => { const el = $('#authError'); el.textContent = msg; el.classList.toggle('d-none', !msg); };
+    const showRole = role => bootstrap.Tab.getOrCreateInstance($('#tab-' + role)).show();
+
+    function lockRole(role) {
+      const other = role === 'driver' ? 'neighbor' : 'driver';
+      showRole(role);
+      const t = $('#tab-' + other);
+      t.disabled = true; t.classList.add('disabled');
+    }
+    function unlockRoles() {
+      ['neighbor', 'driver'].forEach(r => { const t = $('#tab-' + r); t.disabled = false; t.classList.remove('disabled'); });
+    }
+
+    function applySession() {
+      const s = store.get('ecoruta:session');
+      const user = s && users().find(u => u.email === s.email);
+      $('#authButtons').classList.toggle('d-none', !!user);
+      $('#userMenu').classList.toggle('d-none', !user);
+      if (user) {
+        $('#userName').textContent = `${user.name} · ${user.role === 'conductor' ? 'Conductor' : 'Vecino'}`;
+        lockRole(user.role === 'conductor' ? 'driver' : 'neighbor');
+      } else {
+        unlockRoles();
+      }
+    }
+
+    function openAuth(which) {
+      showAuthError('');
+      showTabSafe('tab-' + which);
+      bootstrap.Modal.getOrCreateInstance($('#authModal')).show();
+    }
+    function showTabSafe(id) { bootstrap.Tab.getOrCreateInstance(document.getElementById(id)).show(); }
+
+    $('#registerForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = e.target;
+      showAuthError('');
+      if (!f.checkValidity()) { f.classList.add('was-validated'); return; }
+      if (!(window.crypto && crypto.subtle)) { showAuthError('Se requiere HTTPS o localhost para crear cuentas.'); return; }
+      const name = $('#regName').value.trim();
+      const email = $('#regEmail').value.trim().toLowerCase();
+      const role = $('#regRole').value;
+      const list = users();
+      if (list.some(u => u.email === email)) { showAuthError('Ya existe una cuenta con ese correo.'); return; }
+      const salt = newSalt();
+      list.push({ name, email, role, salt, hash: await hashPass($('#regPass').value, salt) });
+      store.set('ecoruta:users', list);
+      store.set('ecoruta:session', { email });
+      f.reset(); f.classList.remove('was-validated');
+      bootstrap.Modal.getOrCreateInstance($('#authModal')).hide();
+      applySession();
+      toast(`¡Bienvenido, ${name}!`);
+    });
+
+    $('#loginForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = e.target;
+      showAuthError('');
+      if (!f.checkValidity()) { f.classList.add('was-validated'); return; }
+      if (!(window.crypto && crypto.subtle)) { showAuthError('Se requiere HTTPS o localhost para iniciar sesión.'); return; }
+      const email = $('#logEmail').value.trim().toLowerCase();
+      const user = users().find(u => u.email === email);
+      if (!user || (await hashPass($('#logPass').value, user.salt)) !== user.hash) {
+        showAuthError('Correo o contraseña incorrectos.'); return;
+      }
+      store.set('ecoruta:session', { email });
+      f.reset(); f.classList.remove('was-validated');
+      bootstrap.Modal.getOrCreateInstance($('#authModal')).hide();
+      applySession();
+      toast(`Hola de nuevo, ${user.name}.`);
+    });
+
+    $('#btnLogout').addEventListener('click', () => {
+      if (driver.mode) stopRoute();
+      store.del('ecoruta:session');
+      applySession();
+      toast('Sesión cerrada.', 'secondary');
+    });
+
+    /* ---------- Navegación: roles, sesión, menú móvil, sección activa ---------- */
+    document.addEventListener('click', e => {
+      const r = e.target.closest('[data-role]');
+      if (r) { const t = $('#tab-' + r.dataset.role); if (t && !t.disabled) showRole(r.dataset.role); }
+      const a = e.target.closest('[data-auth]');
+      if (a) openAuth(a.dataset.auth);
+    });
+
+    const menu = $('#menuPrincipal');
+    menu.querySelectorAll('.nav-link, .btn').forEach(el => {
+      el.addEventListener('click', () => {
+        if (menu.classList.contains('show')) bootstrap.Collapse.getOrCreateInstance(menu).hide();
+      });
+    });
+
+    const enlaces = [...document.querySelectorAll('.navbar-nav .nav-link')];
+    const secciones = enlaces.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+    const obs = new IntersectionObserver(entradas => {
+      entradas.forEach(en => {
+        if (en.isIntersecting) enlaces.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + en.target.id));
+      });
+    }, { rootMargin: '-45% 0px -50% 0px' });
+    secciones.forEach(s => obs.observe(s));
+
+    /* ---------- Inicio ---------- */
+    $('#anio').textContent = new Date().getFullYear();
+    $('#minutes').value = String(state.minutes);
+    renderNotifBtn();
+    applySession();
+    if (state.home) setHome(state.home, { fly: false });
+    const last = Transport.last();
+    if (last && last.type === 'pos' && Date.now() - last.ts < CFG.staleMs) onTruck(last);
+    setInterval(renderTruckBadge, 5000);
+  })();
+  </script>
+</body>
+</html>
